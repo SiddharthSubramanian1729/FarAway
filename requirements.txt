@@ -5,4 +5,4 @@ requests
 python-dotenv
 openai
 ultralytics
-
+python-multipart
