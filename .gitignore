@@ -20,6 +20,7 @@ test_image.jpg
 
 # Log files
 *.log
+build_log.txt
 
 # OS files
 .DS_Store

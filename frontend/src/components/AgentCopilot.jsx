@@ -35,7 +35,6 @@ export default function AgentCopilot({ telemetry, apiBase }) {
       setInputValue('');
     }
 
-    // Add user message
     const userMsg = {
       sender: 'user',
       text: text,
@@ -44,30 +43,30 @@ export default function AgentCopilot({ telemetry, apiBase }) {
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
-    try {
-      const res = await fetch(`${apiBase}/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text })
-      });
-      const data = await res.json();
-      
+    setTimeout(() => {
+      const lowerText = text.toLowerCase();
+      let reply = 'TSKY-1 local simulation is online. Thermal load is stable, power reserves are healthy, and the relay constellation remains nominal.';
+
+      if (lowerText.includes('temperature')) {
+        reply = 'Thermal drift is climbing slowly across the cluster, but the ammonia loop remains within safe operating margins. I recommend keeping the radiator view factor elevated.';
+      } else if (lowerText.includes('cooling')) {
+        reply = 'Ammonia loop integrity is above 90%. A minor increase in flow rate will reduce the risk of localized hot spots.';
+      } else if (lowerText.includes('power')) {
+        reply = 'Solar generation is outperforming demand and the battery reserve is healthy. The supercap bank is holding at a comfortable charge level.';
+      } else if (lowerText.includes('fault')) {
+        reply = 'No critical failure is active. I do see a mild thermal warning and one workload spike that should be monitored.';
+      } else if (lowerText.includes('workload')) {
+        reply = 'The scheduler is keeping wildfire detection and flood prediction active while climate monitoring remains in a low power mode.';
+      }
+
       const tskyMsg = {
         sender: 'tsky',
-        text: data.answer || 'No response received from core terminal.',
+        text: reply,
         time: new Date().toLocaleTimeString()
       };
       setMessages(prev => [...prev, tskyMsg]);
-    } catch (e) {
-      const errorMsg = {
-        sender: 'tsky',
-        text: 'COMMS FAILURE: Unable to reach TSKY uplink. Verify backend server is running.',
-        time: new Date().toLocaleTimeString()
-      };
-      setMessages(prev => [...prev, errorMsg]);
-    } finally {
       setIsLoading(false);
-    }
+    }, 650);
   };
 
   return (

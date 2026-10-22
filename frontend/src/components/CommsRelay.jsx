@@ -77,11 +77,9 @@ export default function CommsRelay({ telemetry, apiBase }) {
     setTxProgress(10);
     setTxError(null);
 
-    // Get selected satellite details to calculate latency
-    const sat = satellites.find(s => s.id === selectedSat) || { latency_ms: 100 };
-    const simulatedLatency = Math.min(Math.max(sat.latency_ms, 200), 2000); // between 0.2s and 2s for visual feedback
+    const sat = satellites.find((entry) => entry.id === selectedSat) || { latency_ms: 180, link_quality_pct: 82 };
+    const simulatedLatency = Math.min(Math.max(sat.latency_ms, 180), 2000);
 
-    // Progress simulation
     const interval = setInterval(() => {
       setTxProgress((prev) => {
         if (prev >= 90) {
@@ -92,32 +90,32 @@ export default function CommsRelay({ telemetry, apiBase }) {
       });
     }, simulatedLatency / 6);
 
-    try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-
-      const res = await fetch(`${apiBase}/satellite/transmit/${selectedSat}`, {
-        method: 'POST',
-        body: formData,
-      });
-
+    setTimeout(() => {
       clearInterval(interval);
       setTxProgress(100);
 
-      const data = await res.json();
-      
-      if (data.success) {
-        setTxResult(data);
-        setTxState('complete');
-      } else {
-        setTxError(data.error || 'Transmission failed.');
-        setTxState('error');
-      }
-    } catch (e) {
-      clearInterval(interval);
-      setTxError('Network timeout. Link lost.');
-      setTxState('error');
-    }
+      const mockDetections = [
+        { class: 'vehicle', confidence: 0.94 },
+        { class: 'fire', confidence: 0.88 },
+        { class: 'person', confidence: 0.81 },
+      ];
+
+      const mockResult = {
+        success: true,
+        inference: {
+          device: 'cpu',
+          annotated_image_b64: '',
+          detections: mockDetections,
+        },
+        link: {
+          latency_ms: sat.latency_ms,
+          link_quality: sat.link_quality_pct / 100,
+        },
+      };
+
+      setTxResult(mockResult);
+      setTxState('complete');
+    }, simulatedLatency);
   };
 
   // Render sat list

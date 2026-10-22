@@ -1,0 +1,12 @@
+.git
+venv
+env
+ENV
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+build_log.txt
+node_modules
+frontend/node_modules

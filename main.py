@@ -50,14 +50,9 @@ from mission.mission_manager import MissionManager
 from mission.logger import EventLogger
 from mission.agent import AutonomousAgent
 from ultralytics import YOLO
-from PIL import Image
-import io
-import base64
-from fastapi import UploadFile, File
 import torch
 
-# Load YOLOv8 model at startup
-# Uses GPU/MPS if available, falls back to CPU
+# Determine device for inference
 if torch.cuda.is_available():
     DEVICE = "cuda"
 elif torch.backends.mps.is_available():
@@ -65,10 +60,10 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = "cpu"
 
-yolo_model = YOLO("yolov8n.pt")  # downloads automatically first run
-yolo_model.to(DEVICE)
+print(f"TSKY AI Engine will use device: {DEVICE}")
 
-print(f"TSKY AI Engine loaded on: {DEVICE}")
+# NOTE: YOLO model will be loaded lazily inside the /analyze-image endpoint to reduce startup time.
+
 
 
 # Registry of known relay satellites
@@ -782,6 +777,15 @@ async def ask_agent(body: dict):
 @app.post("/analyze-image")
 async def analyze_image(file: UploadFile = File(...)):
     try:
+        # Lazy import of image handling libraries
+        from PIL import Image
+        import io
+        import base64
+        # Lazy load YOLO model if not already loaded
+        global yolo_model
+        if 'yolo_model' not in globals():
+            yolo_model = YOLO("yolov8n.pt")
+            yolo_model.to(DEVICE)
         # Read uploaded image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")

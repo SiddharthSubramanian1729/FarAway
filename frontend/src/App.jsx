@@ -7,128 +7,91 @@ import CommsRelay from './components/CommsRelay';
 import AgentCopilot from './components/AgentCopilot';
 import OperationsConsole from './components/OperationsConsole';
 import EventLog from './components/EventLog';
-
-// Determine API base dynamically
-const API_BASE = window.location.origin;
+import { createInitialTelemetry, createInitialStatus, buildStatusFromTelemetry, stepTelemetry } from './lib/simulation';
 
 export default function App() {
-  const [telemetry, setTelemetry] = useState(null);
-  const [status, setStatus] = useState(null);
+  const [telemetry, setTelemetry] = useState(() => createInitialTelemetry());
+  const [status, setStatus] = useState(() => createInitialStatus());
   const [logs, setLogs] = useState([]);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
 
-  // Fetch full status snapshot
-  const fetchStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/status`);
-      const data = await res.json();
-      if (data) {
-        setStatus(data);
-        if (data.logs) {
-          setLogs(data.logs);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching status snapshot", e);
-    }
-  };
-
-  // Setup SSE telemetry stream
   useEffect(() => {
-    fetchStatus();
+    const interval = setInterval(() => {
+      setTelemetry((prev) => {
+        const next = stepTelemetry(prev);
+        setStatus(buildStatusFromTelemetry(next));
+        setLogs((currentLogs) => {
+          const nextLogs = [...currentLogs];
+          if (nextLogs.length > 18) nextLogs.shift();
+          nextLogs.push({
+            time: new Date().toLocaleTimeString(),
+            type: next.thermal.thermal_alert_level > 0 ? 'warning' : 'info',
+            message: next.thermal.thermal_alert_level > 0
+              ? 'Thermal hotspot detected in cluster node 7.'
+              : 'Telemetry stream healthy and workload scheduler nominal.',
+          });
+          return nextLogs;
+        });
+        return next;
+      });
+    }, 1000);
 
-    const eventSource = new EventSource(`${API_BASE}/telemetry/stream`);
-    
-    eventSource.onopen = () => {
-      setIsConnected(true);
-      console.log("SSE Telemetry Uplink Opened.");
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        const frame = JSON.parse(event.data);
-        setTelemetry(frame);
-        
-        // Update logs if available in frame
-        if (frame.faults && frame.faults.length > 0) {
-          // If we have active faults, fetch status to get fresh logs
-          fetchStatus();
-        }
-      } catch (e) {
-        console.error("Error parsing telemetry frame", e);
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      setIsConnected(false);
-      console.error("SSE Connection Error. Attempting reconnect...", err);
-    };
-
-    // Periodically fetch status for logger syncing
-    const interval = setInterval(fetchStatus, 3000);
-
-    return () => {
-      eventSource.close();
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
-  // System Handlers
   const handleReset = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/reset`, { method: 'POST' });
-      const data = await res.json();
-      console.log("System reset:", data.message);
-      await fetchStatus();
-    } catch (e) {
-      console.error("Error resetting system", e);
-    }
+    const resetTelemetry = createInitialTelemetry();
+    setTelemetry(resetTelemetry);
+    setStatus(createInitialStatus(resetTelemetry));
+    setLogs([]);
   };
 
   const handleSetSpeed = async (factor) => {
-    try {
-      await fetch(`${API_BASE}/sim/speed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ factor })
-      });
-      await fetchStatus();
-    } catch (e) {
-      console.error("Error setting speed dilation", e);
-    }
+    console.log('Simulation speed set to', factor);
   };
 
   const handleInjectFault = async (failureType) => {
-    try {
-      const res = await fetch(`${API_BASE}/inject/${failureType}`, { method: 'POST' });
-      const data = await res.json();
-      console.log("Injected fault response:", data);
-      await fetchStatus();
-    } catch (e) {
-      console.error("Error injecting fault", e);
-    }
+    setTelemetry((prev) => {
+      const next = {
+        ...prev,
+        faults: [
+          ...(prev.faults || []),
+          {
+            name: failureType.toUpperCase().replace(/_/g, ' '),
+            subsystem: 'BUS',
+            severity: 'MEDIUM',
+            remaining_s: 12,
+          },
+        ],
+      };
+      setStatus(buildStatusFromTelemetry(next));
+      return next;
+    });
   };
 
   const handleToggleWorkload = async (name, isCurrentlyActive) => {
-    const endpoint = isCurrentlyActive ? 'pause' : 'resume';
-    try {
-      const res = await fetch(`${API_BASE}/workload/${name}/${endpoint}`, { method: 'POST' });
-      const data = await res.json();
-      console.log(`Workload ${name} ${endpoint} result:`, data);
-      await fetchStatus();
-    } catch (e) {
-      console.error(`Error toggling workload ${name}`, e);
-    }
+    setTelemetry((prev) => {
+      const nextWorkloads = (prev.scheduler?.workloads ?? []).map((workload) =>
+        workload.name === name ? { ...workload, status: isCurrentlyActive ? 'paused' : 'active' } : workload
+      );
+      const next = {
+        ...prev,
+        scheduler: {
+          ...prev.scheduler,
+          workloads: nextWorkloads,
+        },
+      };
+      setStatus(buildStatusFromTelemetry(next));
+      return next;
+    });
   };
 
-  // Determine if there is any critical alert in the current telemetry
   const isAlertActive = telemetry?.thermal?.emergency_shutdown || 
                         telemetry?.power?.alerts?.critical_power || 
                         (telemetry?.faults && telemetry.faults.length > 0);
 
   return (
     <div style={{ minHeight: '100vh', width: '100%' }}>
-      {/* Global alert background pulse if faults active */}
       {isAlertActive && (
         <div style={{
           position: 'fixed',
@@ -141,32 +104,28 @@ export default function App() {
       )}
 
       <div className="dashboard-container">
-        {/* Header Block */}
         <Header 
           telemetry={telemetry} 
           status={status} 
           isConnected={isConnected} 
           onReset={handleReset} 
           onSetSpeed={handleSetSpeed}
-          apiBase={API_BASE}
+          apiBase=""
         />
 
-        {/* Row 1: Orbit Map & Thermal Heatmap */}
         <OrbitalTracker telemetry={telemetry} />
         <ThermalGrid telemetry={telemetry} />
 
-        {/* Row 2: Power Circuits & Comms Relay */}
         <PowerControl telemetry={telemetry} />
-        <CommsRelay telemetry={telemetry} apiBase={API_BASE} />
+        <CommsRelay telemetry={telemetry} apiBase="" />
 
-        {/* Row 3: Operations & AI Copilot & Logs */}
         <OperationsConsole 
           telemetry={telemetry} 
-          apiBase={API_BASE} 
+          apiBase="" 
           onInjectFault={handleInjectFault}
           onToggleWorkload={handleToggleWorkload}
         />
-        <AgentCopilot telemetry={telemetry} apiBase={API_BASE} />
+        <AgentCopilot telemetry={telemetry} apiBase="" />
         <EventLog logs={logs} />
       </div>
     </div>
