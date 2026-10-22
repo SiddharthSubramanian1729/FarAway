@@ -30,7 +30,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,6 +51,9 @@ from mission.logger import EventLogger
 from mission.agent import AutonomousAgent
 from ultralytics import YOLO
 import torch
+from PIL import Image
+import io
+import base64
 
 # Determine device for inference
 if torch.cuda.is_available():
